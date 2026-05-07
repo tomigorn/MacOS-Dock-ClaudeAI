@@ -49,7 +49,7 @@ class SessionStore {
 
 // MARK: - Dock Icon Renderer
 
-func updateDockIcon(session: Int, weekly: Int) {
+func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
     let size = NSSize(width: 128, height: 128)
     let image = NSImage(size: size, flipped: false) { rect in
         let bgPath = NSBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 4), xRadius: 24, yRadius: 24)
@@ -69,12 +69,12 @@ func updateDockIcon(session: Int, weekly: Int) {
             .font: smallFont, .foregroundColor: textColor, .paragraphStyle: paragraphStyle
         ]
 
-        let line1 = "\(session)%"
+        let line1 = session.map { "\($0)%" } ?? "—"
         let line1Size = (line1 as NSString).size(withAttributes: bigAttrs)
         let line1Rect = NSRect(x: 0, y: rect.midY + 2, width: rect.width, height: line1Size.height)
         (line1 as NSString).draw(in: line1Rect, withAttributes: bigAttrs)
 
-        let line2 = "\(weekly)%"
+        let line2 = weekly.map { "\($0)%" } ?? "—"
         let line2Size = (line2 as NSString).size(withAttributes: smallAttrs)
         let line2Rect = NSRect(x: 0, y: rect.midY - line2Size.height + 2, width: rect.width, height: line2Size.height)
         (line2 as NSString).draw(in: line2Rect, withAttributes: smallAttrs)

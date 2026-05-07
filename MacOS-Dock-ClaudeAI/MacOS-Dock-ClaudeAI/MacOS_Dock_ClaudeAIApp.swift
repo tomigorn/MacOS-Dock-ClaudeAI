@@ -12,7 +12,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         super.init()
         // Set a dark placeholder icon as early as possible
-        updateDockIcon(session: 0, weekly: 0)
+        updateDockIcon()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
