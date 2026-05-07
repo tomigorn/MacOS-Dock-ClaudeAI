@@ -74,7 +74,7 @@ func updateDockIcon(session: Int, weekly: Int) {
         let line1Rect = NSRect(x: 0, y: rect.midY + 2, width: rect.width, height: line1Size.height)
         (line1 as NSString).draw(in: line1Rect, withAttributes: bigAttrs)
 
-        let line2 = "\(weekly)% wk"
+        let line2 = "\(weekly)%"
         let line2Size = (line2 as NSString).size(withAttributes: smallAttrs)
         let line2Rect = NSRect(x: 0, y: rect.midY - line2Size.height + 2, width: rect.width, height: line2Size.height)
         (line2 as NSString).draw(in: line2Rect, withAttributes: smallAttrs)

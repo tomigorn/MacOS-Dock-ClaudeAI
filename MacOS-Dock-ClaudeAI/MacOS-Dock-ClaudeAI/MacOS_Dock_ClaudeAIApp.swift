@@ -6,8 +6,15 @@
 //
 
 import SwiftUI
+import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    override init() {
+        super.init()
+        // Set a dark placeholder icon as early as possible
+        updateDockIcon(session: 0, weekly: 0)
+    }
+
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
         return false
     }
@@ -28,7 +35,35 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         weeklyItem.isEnabled = false
         menu.addItem(weeklyItem)
 
+        menu.addItem(NSMenuItem.separator())
+
+        let isEnabled = SMAppService.mainApp.status == .enabled
+        let loginItem = NSMenuItem(
+            title: isEnabled ? "Disable Launch at Login" : "Launch at Login",
+            action: #selector(toggleLaunchAtLogin),
+            keyEquivalent: ""
+        )
+        loginItem.target = self
+        if isEnabled {
+            loginItem.state = .on
+        }
+        menu.addItem(loginItem)
+
         return menu
+    }
+
+    @objc func toggleLaunchAtLogin() {
+        do {
+            if SMAppService.mainApp.status == .enabled {
+                try SMAppService.mainApp.unregister()
+                print("Launch at login disabled")
+            } else {
+                try SMAppService.mainApp.register()
+                print("Launch at login enabled")
+            }
+        } catch {
+            print("Failed to toggle launch at login: \(error)")
+        }
     }
 }
 
