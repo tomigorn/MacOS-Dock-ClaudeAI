@@ -1,117 +1,56 @@
 # Claude Usage — macOS Dock Monitor
 
-A native macOS app that scrapes your Claude.ai usage limits and renders them live onto the Dock icon.
-
-![Dock icon showing 73% and 68% wk](docs/dock-icon-preview.png)
+A native macOS app that shows your Claude.ai usage percentages directly on the Dock icon.
 
 ## What it does
 
-- Shows your **current usage window %** and **weekly usage %** directly on the Dock icon
-- Polls claude.ai every **15 minutes** in the background
-- Keeps a **WKWebView window** open so you stay logged in (your existing cookies are reused — no credentials stored)
-- Stays running after you close the window; click the Dock icon to reopen it
-- Text color shifts white → yellow → orange as usage climbs past 70% / 85%
+- Shows your **current session %** and **weekly usage %** on the Dock icon
+- Right-click the Dock icon to see details with reset times
+- Polls claude.ai every **15 minutes** in the background using a hidden WKWebView
+- Closes the window automatically after first successful fetch
+- Stays running after the window closes; click the Dock icon to reopen
 
 ## Requirements
 
-- macOS 13 Ventura or later
-- Xcode 15 or later (free from the Mac App Store)
+- macOS 26.4 or later
+- Xcode 26.4 or later
 - A Claude.ai account
 
-## Installation
+## Build & Run
 
-### 1. Clone the repo
+1. Clone the repo and open in Xcode:
+   ```bash
+   git clone <repo-url>
+   cd MacOS-Dock-ClaudeAI
+   open MacOS-Dock-ClaudeAI/MacOS-Dock-ClaudeAI.xcodeproj
+   ```
 
-```bash
-git clone <repo-url>
-cd MacOS-Dock-ClaudeAI
-```
+2. In Xcode, select the **MacOS-Dock-ClaudeAI** target, open **Signing & Capabilities**, and choose your personal Apple ID as the Team.
 
-### 2. Open in Xcode
+3. Press **Cmd+R** to build and run.
 
-```bash
-open ClaudeUsage/ClaudeUsage.xcodeproj
-```
+4. Log in to Claude in the browser window that opens. The app will automatically fetch your usage data and close the window.
 
-### 3. Set your signing team
+## Export the app (no developer account needed)
 
-Xcode needs a code signing identity to build a macOS app, even for local use.
+1. In Xcode: **Product → Archive**
+2. In the Organizer: **Distribute App → Custom → Copy App**
+3. Choose a save location (e.g. Desktop)
+4. Right-click the `.app` → **Compress** to create a `.zip`
+5. Upload the `.zip` to a GitHub release, or move the `.app` to `/Applications`
 
-1. In the Xcode sidebar, click the **ClaudeUsage** project (top of the tree)
-2. Select the **ClaudeUsage** target
-3. Open the **Signing & Capabilities** tab
-4. Under **Team**, choose your personal Apple ID (add it via Xcode → Settings → Accounts if needed)
+> **Note:** Since the app is not notarized, anyone installing it needs to right-click → Open on first launch to bypass the macOS security warning.
 
-If you don't have a paid developer account, choose your free personal team — this works fine for running on your own Mac.
+## Launch at login
 
-### 4. Build and run
+With the app running, right-click its Dock icon → Options → **Open at Login**.
 
-Press **⌘R** (or Product → Run).
+## How it works
 
-The app will:
-- Open a window with claude.ai loaded
-- Show `?%` on the Dock icon until the first scrape completes (~5 seconds after launch)
+On launch, a WKWebView loads claude.ai so you can log in. A separate hidden WKWebView navigates to `claude.ai/settings/usage`, waits for the page to render, then injects JavaScript that reads `aria-valuenow` from the usage progress bars. The percentages are drawn onto the Dock icon as bold white text on a dark rounded rectangle.
 
-### 5. Log in to Claude
-
-If you're not already logged in, log in normally inside the app window. Your session persists across relaunches via the system cookie store.
-
-### 6. (Optional) Launch at login
-
-To have the app start automatically when you log in to your Mac:
-
-1. Build a Release build: Product → Archive, then Distribute App → Copy App
-2. Move `ClaudeUsage.app` to `/Applications`
-3. Open **System Settings → General → Login Items**
-4. Click **+** and add `ClaudeUsage.app`
-
-Alternatively, with the app running, right-click its Dock icon → Options → **Open at Login**.
-
-## How the scraping works
-
-Every 15 minutes the app navigates its WKWebView to `claude.ai/settings/limits`, waits ~2.5 seconds for React to render, then injects a small JavaScript snippet that reads the usage percentages from the DOM. The page is then navigated back to `claude.ai` to keep your session warm.
-
-The JS tries three selector strategies in order:
-
-1. `[role="progressbar"]` ARIA attributes
-2. Bare text nodes matching `/^\d{1,3}%$/`
-3. `data-testid` attributes
-
-If none match (e.g. after a Claude DOM update), the icon shows `?%` and an error is logged to the console. To fix a broken selector, edit the `scraperScript` constant at the top of `ClaudeUsage/ClaudeUsage/UsageScraper.swift`.
-
-## Project layout
-
-```
-ClaudeUsage/
-├── ClaudeUsage.xcodeproj/
-└── ClaudeUsage/
-    ├── AppDelegate.swift           # lifecycle, 15-min timer, orchestration
-    ├── MainWindowController.swift  # WKWebView window + scrape coordination
-    ├── UsageScraper.swift          # JS injection and response parsing
-    ├── DockIconRenderer.swift      # draws the live Dock icon
-    ├── Info.plist                  # app metadata, no quit-on-close
-    └── ClaudeUsage.entitlements    # sandbox + outbound network
-```
+The scraping JS is defined in the `usageJS` constant at the top of `ContentView.swift` — update it there if Claude's DOM changes.
 
 ## Permissions
 
-The app requests only:
-
-- `com.apple.security.network.client` — outbound HTTPS to claude.ai
-- `com.apple.security.app-sandbox` — standard sandboxing
-
-No microphone, camera, location, contacts, or keychain access.
-
-## Troubleshooting
-
-**Icon stays at `?%`**
-The DOM selectors may have broken after a Claude update. Open the Console app, filter by `ClaudeUsage`, and look for `[UsageScraper]` log lines. Then update `scraperScript` in `UsageScraper.swift`.
-
-**App doesn't stay in the Dock after closing the window**
-This is expected — the app runs as a regular app (not a menu-bar-only app) so it remains in the Dock. Closing the window doesn't quit it; use ⌘Q to quit.
-
-**Build error: "No account for team"**
-Go to Xcode → Settings → Accounts → add your Apple ID.
-
-**Build error about signing**
-Try: Product → Clean Build Folder (⇧⌘K), then build again.
+The app only requires outbound network access (`com.apple.security.network.client`) within the standard app sandbox.
