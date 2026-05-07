@@ -188,15 +188,15 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 // MARK: - Login WebView Coordinator
 
 class WebViewCoordinator: NSObject, WKNavigationDelegate {
-    var started = false
+    var registered = false
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let url = webView.url, url.host?.contains("claude.ai") == true else { return }
 
-        if !started {
-            started = true
+        if !registered {
+            registered = true
+            // Tell the scraper which window to close after first successful fetch
             UsageScraper.shared.loginWebView = webView
-            UsageScraper.shared.startPeriodicFetch()
         }
     }
 }

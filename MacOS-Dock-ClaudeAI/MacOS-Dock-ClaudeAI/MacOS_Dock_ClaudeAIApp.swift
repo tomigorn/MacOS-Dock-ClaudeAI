@@ -13,6 +13,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
         // Set a dark placeholder icon as early as possible
         updateDockIcon()
+        // Start scraping immediately — don't wait for the visible window
+        UsageScraper.shared.startPeriodicFetch()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
