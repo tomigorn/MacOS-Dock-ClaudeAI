@@ -2,6 +2,10 @@
 
 A native macOS app that shows your Claude.ai usage percentages directly on the Dock icon.
 
+<img width="302" height="76" alt="SCR-20260507-ptln" src="https://github.com/user-attachments/assets/51a6d8d9-8874-48b7-a7e9-48fe752edb82" />
+
+<br>
+
 <img width="315" height="337" alt="SCR-20260507-pstd" src="https://github.com/user-attachments/assets/8e008fe9-249c-4f1a-a878-03c1473416e7" />
 
 ## What it does
