@@ -49,6 +49,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         menu.addItem(loginItem)
 
+        menu.addItem(NSMenuItem.separator())
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
+        let versionItem = NSMenuItem(title: "v\(version)", action: nil, keyEquivalent: "")
+        versionItem.isEnabled = false
+        menu.addItem(versionItem)
+
         return menu
     }
 
