@@ -178,8 +178,14 @@ class UsageScraper: NSObject, WKNavigationDelegate {
         }
         // If redirected to login, we're not authenticated yet
         if url.path.contains("login") {
-            print("⚠️ Not logged in yet — waiting for user to log in via window")
+            print("⚠️ Not logged in — opening window for user to log in")
             isScraping = false
+            // Show the login window
+            DispatchQueue.main.async {
+                if let appDelegate = NSApp.delegate as? AppDelegate {
+                    appDelegate.openClaudeWindow()
+                }
+            }
             return
         }
         guard url.absoluteString.contains("settings/usage") else { 
@@ -225,8 +231,10 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                 // Close the login window after first successful fetch
                 if let self = self, !self.hasSucceeded {
                     self.hasSucceeded = true
-                    self.loginWebView?.window?.close()
-                    self.loginWebView = nil
+                    if let appDelegate = NSApp.delegate as? AppDelegate {
+                        appDelegate.claudeWindow?.close()
+                        appDelegate.claudeWindow = nil
+                    }
                 }
             }
         }

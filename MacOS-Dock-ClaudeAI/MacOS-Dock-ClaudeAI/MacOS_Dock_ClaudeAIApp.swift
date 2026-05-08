@@ -9,6 +9,8 @@ import SwiftUI
 import ServiceManagement
 
 class AppDelegate: NSObject, NSApplicationDelegate {
+    var claudeWindow: NSWindow?
+    
     override init() {
         super.init()
         // Set a dark placeholder icon as early as possible
@@ -27,6 +29,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
+    }
+    
+    // Handle left-click on dock icon - show menu instead of opening window
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        // Don't open any windows - return false to prevent default behavior
+        // But we can't easily show the dock menu programmatically with system items
+        // So we'll just prevent the window from opening
         return false
     }
 
@@ -48,16 +58,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Open Claude browser window
+        let openWindowItem = NSMenuItem(
+            title: "Open Claude Browser",
+            action: #selector(openClaudeWindow),
+            keyEquivalent: ""
+        )
+        openWindowItem.target = self
+        menu.addItem(openWindowItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let isEnabled = SMAppService.mainApp.status == .enabled
+        let statusIcon = isEnabled ? "✓" : "✗"
         let loginItem = NSMenuItem(
-            title: isEnabled ? "Disable Launch at Login" : "Launch at Login",
+            title: "\(statusIcon) Launch at Login",
             action: #selector(toggleLaunchAtLogin),
             keyEquivalent: ""
         )
         loginItem.target = self
-        if isEnabled {
-            loginItem.state = .on
-        }
         menu.addItem(loginItem)
 
         menu.addItem(NSMenuItem.separator())
@@ -92,6 +111,28 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
     
+    @objc func openClaudeWindow() {
+        // Check if we already have a Claude window
+        if let existingWindow = claudeWindow, existingWindow.isVisible {
+            existingWindow.makeKeyAndOrderFront(nil)
+            NSApp.activate(ignoringOtherApps: true)
+            return
+        }
+        
+        // Create a new window
+        let contentView = ContentView()
+        let hostingController = NSHostingController(rootView: contentView)
+        let window = NSWindow(contentViewController: hostingController)
+        window.title = "Claude AI"
+        window.setContentSize(NSSize(width: 1200, height: 800))
+        window.center()
+        window.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
+        
+        // Store reference
+        claudeWindow = window
+    }
+    
     @objc func openUpdates() {
         UpdateChecker.shared.openReleasesPage()
     }
@@ -102,9 +143,9 @@ struct MacOS_Dock_ClaudeAIApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
 
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        // Empty Settings scene - prevents automatic window creation
+        Settings {
+            EmptyView()
         }
-        .defaultSize(width: 1200, height: 800)
     }
 }
