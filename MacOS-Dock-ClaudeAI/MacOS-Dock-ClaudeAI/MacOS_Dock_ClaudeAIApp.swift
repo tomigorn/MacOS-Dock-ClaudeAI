@@ -21,6 +21,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
             UsageScraper.shared.startPeriodicFetch()
         }
+        
+        // Start update checker
+        UpdateChecker.shared.startChecking()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -59,6 +62,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         menu.addItem(NSMenuItem.separator())
 
+        // Check for updates
+        if UpdateChecker.shared.hasUpdate(), let version = UpdateChecker.shared.getLatestVersion() {
+            let updateItem = NSMenuItem(title: "Update Available → \(version)", action: #selector(openUpdates), keyEquivalent: "")
+            updateItem.target = self
+            menu.addItem(updateItem)
+            menu.addItem(NSMenuItem.separator())
+        }
+
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
         let versionItem = NSMenuItem(title: "v\(version)", action: nil, keyEquivalent: "")
         versionItem.isEnabled = false
@@ -79,6 +90,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } catch {
             print("Failed to toggle launch at login: \(error)")
         }
+    }
+    
+    @objc func openUpdates() {
+        UpdateChecker.shared.openReleasesPage()
     }
 }
 

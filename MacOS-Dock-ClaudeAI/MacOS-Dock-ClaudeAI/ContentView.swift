@@ -82,6 +82,11 @@ func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
         return true
     }
     NSApplication.shared.applicationIconImage = image
+    
+    // Preserve the update badge if one exists
+    if UpdateChecker.shared.hasUpdate() {
+        NSApp.dockTile.badgeLabel = "1"
+    }
 }
 
 // MARK: - Usage Scraper (hidden WKWebView)
@@ -244,3 +249,77 @@ struct ContentView: View {
             .frame(minWidth: 800, minHeight: 600)
     }
 }
+// MARK: - Update Checker
+
+class UpdateChecker {
+    static let shared = UpdateChecker()
+    private var latestVersionString: String?
+    private var updateAvailable = false
+    
+    private init() {}
+    
+    func startChecking() {
+        checkForUpdates()
+        Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
+            self?.checkForUpdates()
+        }
+    }
+    
+    func checkForUpdates() {
+        guard let url = URL(string: "https://api.github.com/repos/tomigorn/MacOS-Dock-ClaudeAI/releases/latest") else { return }
+        
+        var request = URLRequest(url: url)
+        request.setValue("application/vnd.github.v3+json", forHTTPHeaderField: "Accept")
+        
+        URLSession.shared.dataTask(with: request) { data, _, error in
+            guard let data = data, error == nil,
+                  let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let tagName = json["tag_name"] as? String else {
+                return
+            }
+            
+            DispatchQueue.main.async {
+                let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                if self.isNewer(remote: tagName, local: currentVersion) {
+                    self.latestVersionString = tagName
+                    self.updateAvailable = true
+                    print("✅ Update available: \(tagName)")
+                    
+                    // Add badge to dock icon
+                    NSApp.dockTile.badgeLabel = "1"
+                }
+            }
+        }.resume()
+    }
+    
+    func hasUpdate() -> Bool {
+        return updateAvailable
+    }
+    
+    func getLatestVersion() -> String? {
+        return latestVersionString
+    }
+    
+    func openReleasesPage() {
+        if let url = URL(string: "https://github.com/tomigorn/MacOS-Dock-ClaudeAI/releases") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    private func isNewer(remote: String, local: String) -> Bool {
+        let remoteClean = remote.replacingOccurrences(of: "v", with: "")
+        let localClean = local.replacingOccurrences(of: "v", with: "")
+        
+        let remoteParts = remoteClean.split(separator: ".").compactMap { Int($0) }
+        let localParts = localClean.split(separator: ".").compactMap { Int($0) }
+        
+        for i in 0..<max(remoteParts.count, localParts.count) {
+            let r = i < remoteParts.count ? remoteParts[i] : 0
+            let l = i < localParts.count ? localParts[i] : 0
+            if r > l { return true }
+            if r < l { return false }
+        }
+        return false
+    }
+}
+
