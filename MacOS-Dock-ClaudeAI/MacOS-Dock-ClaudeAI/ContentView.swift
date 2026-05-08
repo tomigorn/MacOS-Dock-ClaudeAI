@@ -8,6 +8,7 @@
 import SwiftUI
 import WebKit
 import AppKit
+import UserNotifications
 
 // MARK: - Usage Scraping
 // Update these selectors if claude.ai's DOM changes
@@ -51,6 +52,8 @@ class SessionStore {
 
 func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
     let size = NSSize(width: 128, height: 128)
+    let hasUpdate = UpdateChecker.shared.hasUpdate()
+    
     let image = NSImage(size: size, flipped: false) { rect in
         let bgPath = NSBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 4), xRadius: 24, yRadius: 24)
         NSColor(white: 0.15, alpha: 1.0).setFill()
@@ -78,15 +81,41 @@ func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
         let line2Size = (line2 as NSString).size(withAttributes: smallAttrs)
         let line2Rect = NSRect(x: 0, y: rect.midY - line2Size.height + 2, width: rect.width, height: line2Size.height)
         (line2 as NSString).draw(in: line2Rect, withAttributes: smallAttrs)
+        
+        // Draw update badge directly on the icon
+        if hasUpdate {
+            let badgeSize: CGFloat = 48
+            let badgeX = rect.width - badgeSize - 2
+            let badgeY = rect.height - badgeSize - 2
+            let badgeRect = NSRect(x: badgeX, y: badgeY, width: badgeSize, height: badgeSize)
+            
+            // Red circle background
+            let badgePath = NSBezierPath(ovalIn: badgeRect)
+            NSColor.systemRed.setFill()
+            badgePath.fill()
+            
+            // White up arrow text
+            let badgeFont = NSFont.boldSystemFont(ofSize: 38)
+            let badgeAttrs: [NSAttributedString.Key: Any] = [
+                .font: badgeFont,
+                .foregroundColor: NSColor.white,
+                .paragraphStyle: paragraphStyle
+            ]
+            let badgeText = "↑"
+            let badgeTextSize = (badgeText as NSString).size(withAttributes: badgeAttrs)
+            let badgeTextRect = NSRect(
+                x: badgeX + (badgeSize - badgeTextSize.width) / 2,
+                y: badgeY + (badgeSize - badgeTextSize.height) / 2 - 1,
+                width: badgeTextSize.width,
+                height: badgeTextSize.height
+            )
+            (badgeText as NSString).draw(in: badgeTextRect, withAttributes: badgeAttrs)
+            print("🔔 Drawing badge directly on icon")
+        }
 
         return true
     }
     NSApplication.shared.applicationIconImage = image
-    
-    // Preserve the update badge if one exists
-    if UpdateChecker.shared.hasUpdate() {
-        NSApp.dockTile.badgeLabel = "1"
-    }
 }
 
 // MARK: - Usage Scraper (hidden WKWebView)
@@ -259,6 +288,13 @@ class UpdateChecker {
     private init() {}
     
     func startChecking() {
+        // Request notification permission
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            if granted {
+                print("✅ Notification permission granted")
+            }
+        }
+        
         checkForUpdates()
         Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
             self?.checkForUpdates()
@@ -285,8 +321,12 @@ class UpdateChecker {
                     self.updateAvailable = true
                     print("✅ Update available: \(tagName)")
                     
-                    // Add badge to dock icon
-                    NSApp.dockTile.badgeLabel = "1"
+                    // Send notification
+                    self.sendUpdateNotification(version: tagName)
+                    
+                    // Redraw the dock icon with the badge
+                    let store = SessionStore.shared
+                    updateDockIcon(session: store.sessionUsage, weekly: store.weeklyUsage)
                 }
             }
         }.resume()
@@ -303,6 +343,20 @@ class UpdateChecker {
     func openReleasesPage() {
         if let url = URL(string: "https://github.com/tomigorn/MacOS-Dock-ClaudeAI/releases") {
             NSWorkspace.shared.open(url)
+        }
+    }
+    
+    private func sendUpdateNotification(version: String) {
+        let content = UNMutableNotificationContent()
+        content.title = "Update Available"
+        content.body = "Version \(version) is now available. Right-click the dock icon to update."
+        content.sound = .default
+        
+        let request = UNNotificationRequest(identifier: "update-available", content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request) { error in
+            if let error = error {
+                print("❌ Failed to send notification: \(error)")
+            }
         }
     }
     
