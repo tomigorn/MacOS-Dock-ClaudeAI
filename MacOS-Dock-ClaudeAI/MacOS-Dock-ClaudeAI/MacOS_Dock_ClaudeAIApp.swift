@@ -22,16 +22,16 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         // Set the AppDelegate reference in UsageScraper
         UsageScraper.shared.appDelegate = self
         
+        // Wait longer for WebKit to load cookies from disk after a cold boot
         // Start with a quick check to see if we need to show login window
-        // This provides better UX than waiting 10 seconds
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+        // The UsageScraper will wait for cookies to be loaded before checking
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) {
             UsageScraper.shared.quickLoginCheck()
         }
         
-        // Give WebKit more time to fully initialize and load cookies from disk
-        // Especially important after a cold boot (shutdown vs restart)
-        // The UsageScraper will automatically open the login window if needed
-        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+        // Start periodic fetching after a longer delay to ensure cookies are loaded
+        // The UsageScraper will wait for cookies to be ready before making requests
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
             UsageScraper.shared.startPeriodicFetch()
         }
         
@@ -136,8 +136,8 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
     
-    @objc func openClaudeWindow() {
-        print("🪟 openClaudeWindow() called")
+    @objc func openClaudeWindow(autoOpenedForLogin: Bool = false) {
+        print("🪟 openClaudeWindow() called (autoOpenedForLogin: \(autoOpenedForLogin))")
         
         // Check if we already have a Claude window
         if let existingWindow = claudeWindow, existingWindow.isVisible {
@@ -192,6 +192,7 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     func windowWillClose(_ notification: Notification) {
         print("🪟 Window is closing - resetting loginWindowIsOpen flag")
         UsageScraper.shared.loginWindowIsOpen = false
+        UsageScraper.shared.windowOpenedForLogin = false
         claudeWindow = nil
     }
 }

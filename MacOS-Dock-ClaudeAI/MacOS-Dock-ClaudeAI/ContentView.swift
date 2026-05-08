@@ -130,6 +130,8 @@ class UsageScraper: NSObject, WKNavigationDelegate {
     weak var loginWebView: WKWebView?
     weak var appDelegate: AppDelegate?  // Store reference to AppDelegate
     var loginWindowIsOpen = false  // Track if login window is already shown (internal access)
+    var windowOpenedForLogin = false  // Track if window was auto-opened for login vs manually opened
+    private var cookiesReady = false  // Track if we've verified cookies are loaded
 
     override init() {
         super.init()
@@ -137,12 +139,38 @@ class UsageScraper: NSObject, WKNavigationDelegate {
         config.websiteDataStore = .default()
         hiddenWebView = WKWebView(frame: NSRect(x: 0, y: 0, width: 1200, height: 800), configuration: config)
         hiddenWebView.navigationDelegate = self
+        
+        // Wait for cookies to be loaded from disk before marking as ready
+        ensureCookiesLoaded()
     }
 
     private var retryTimer: Timer?
     
+    // Ensure cookies are loaded from disk before attempting any requests
+    private func ensureCookiesLoaded() {
+        print("🍪 Waiting for WebKit to load cookies from disk...")
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { [weak self] cookies in
+            let claudeCookies = cookies.filter { $0.domain.contains("claude.ai") }
+            print("🍪 WebKit loaded \(cookies.count) total cookies, \(claudeCookies.count) for claude.ai")
+            
+            DispatchQueue.main.async {
+                self?.cookiesReady = true
+                print("✅ Cookies are ready")
+            }
+        }
+    }
+    
     // Quick check on app launch to see if we need to show login window
     func quickLoginCheck() {
+        guard cookiesReady else {
+            print("⏸️ Cookies not ready yet, waiting...")
+            // Retry after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.quickLoginCheck()
+            }
+            return
+        }
+        
         guard !isScraping else {
             print("⏸️ Already scraping, skipping quick check")
             return
@@ -175,6 +203,16 @@ class UsageScraper: NSObject, WKNavigationDelegate {
         guard !loginWindowIsOpen else {
             print("⏸️ Login window is open, pausing background scraping")
             isScraping = false
+            return
+        }
+        
+        // Wait for cookies to be loaded before attempting to fetch
+        guard cookiesReady else {
+            print("⏸️ Cookies not ready yet, waiting...")
+            // Retry after a short delay
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                self?.fetchUsage()
+            }
             return
         }
         
@@ -213,6 +251,7 @@ class UsageScraper: NSObject, WKNavigationDelegate {
             }
             
             loginWindowIsOpen = true
+            windowOpenedForLogin = true  // Mark that this window was auto-opened for login
             
             // Show the login window
             DispatchQueue.main.async { [weak self] in
@@ -221,15 +260,16 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                     print("❌ AppDelegate reference is nil! Trying NSApp.delegate...")
                     if let nsAppDelegate = NSApp.delegate as? AppDelegate {
                         print("✅ Got AppDelegate from NSApp, calling openClaudeWindow()")
-                        nsAppDelegate.openClaudeWindow()
+                        nsAppDelegate.openClaudeWindow(autoOpenedForLogin: true)
                     } else {
                         print("❌ NSApp.delegate cast failed too!")
                         self?.loginWindowIsOpen = false  // Reset flag if failed
+                        self?.windowOpenedForLogin = false
                     }
                     return
                 }
                 print("✅ Got AppDelegate from stored reference, calling openClaudeWindow()")
-                appDelegate.openClaudeWindow()
+                appDelegate.openClaudeWindow(autoOpenedForLogin: true)
             }
             return
         }
@@ -278,6 +318,7 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                 if let self = self, !self.hasSucceeded {
                     self.hasSucceeded = true
                     self.loginWindowIsOpen = false  // Reset flag so window can open again if needed
+                    self.windowOpenedForLogin = false  // Reset this too
                     print("🎉 First successful data fetch!")
                 }
             }
@@ -320,15 +361,25 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate {
         let isChatPage = urlString.contains("/chat") && !urlString.contains("/login") && !urlString.contains("/logout")
         
         if isNewPage || isChatPage {
-            // User is logged in! Close the window and reset the flag
+            // Only auto-close if the window was opened automatically for login
+            // If user manually opened it, let them use it normally
+            if !UsageScraper.shared.windowOpenedForLogin {
+                print("✅ Login successful, but window was manually opened - keeping it open")
+                checkTimer?.invalidate()
+                checkTimer = nil
+                return
+            }
+            
+            // User is logged in via auto-opened window! Close it and reset the flag
             print("✅ Login successful! User reached: \(urlString)")
-            print("🪟 Closing login window...")
+            print("🪟 Auto-closing login window...")
             
             // Stop the timer
             checkTimer?.invalidate()
             checkTimer = nil
             
             UsageScraper.shared.loginWindowIsOpen = false
+            UsageScraper.shared.windowOpenedForLogin = false
             
             // Use the stored appDelegate reference instead of NSApp.delegate
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
