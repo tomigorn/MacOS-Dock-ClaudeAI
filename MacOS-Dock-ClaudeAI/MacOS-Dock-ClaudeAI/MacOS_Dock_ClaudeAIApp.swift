@@ -7,8 +7,9 @@
 
 import SwiftUI
 import ServiceManagement
+import WebKit
 
-class AppDelegate: NSObject, NSApplicationDelegate {
+class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     var claudeWindow: NSWindow?
     
     override init() {
@@ -18,8 +19,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Set the AppDelegate reference in UsageScraper
+        UsageScraper.shared.appDelegate = self
+        
+        // Start with a quick check to see if we need to show login window
+        // This provides better UX than waiting 10 seconds
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) {
+            UsageScraper.shared.quickLoginCheck()
+        }
+        
         // Give WebKit more time to fully initialize and load cookies from disk
         // Especially important after a cold boot (shutdown vs restart)
+        // The UsageScraper will automatically open the login window if needed
         DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
             UsageScraper.shared.startPeriodicFetch()
         }
@@ -60,7 +71,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Open Claude browser window
         let openWindowItem = NSMenuItem(
-            title: "Open Claude Browser",
+            title: "Open Session Manager",
             action: #selector(openClaudeWindow),
             keyEquivalent: ""
         )
@@ -89,9 +100,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             menu.addItem(NSMenuItem.separator())
         }
 
+        // About item
+        let aboutItem = NSMenuItem(title: "About", action: #selector(openAbout), keyEquivalent: "")
+        aboutItem.target = self
+        menu.addItem(aboutItem)
+        
+        // Version item (opens releases page)
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "?"
-        let versionItem = NSMenuItem(title: "v\(version)", action: nil, keyEquivalent: "")
-        versionItem.isEnabled = false
+        let versionItem = NSMenuItem(title: "v\(version)", action: #selector(openReleases), keyEquivalent: "")
+        
+        // Make it look greyed out while keeping it clickable
+        let attributes: [NSAttributedString.Key: Any] = [
+            .foregroundColor: NSColor.disabledControlTextColor
+        ]
+        let attributedTitle = NSAttributedString(string: "v\(version)", attributes: attributes)
+        versionItem.attributedTitle = attributedTitle
+        
+        versionItem.target = self
         menu.addItem(versionItem)
 
         return menu
@@ -112,29 +137,62 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
     
     @objc func openClaudeWindow() {
+        print("🪟 openClaudeWindow() called")
+        
         // Check if we already have a Claude window
         if let existingWindow = claudeWindow, existingWindow.isVisible {
+            print("🪟 Bringing existing window to front")
             existingWindow.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
         
+        print("🪟 Creating new window")
+        
+        // Activate app first
+        NSApp.activate(ignoringOtherApps: true)
+        
         // Create a new window
         let contentView = ContentView()
         let hostingController = NSHostingController(rootView: contentView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Claude AI"
+        window.title = "Claude AI - Session Manager"
         window.setContentSize(NSSize(width: 1200, height: 800))
         window.center()
+        window.styleMask = [.titled, .closable, .resizable]
+        window.isReleasedWhenClosed = false
+        window.delegate = self  // Set delegate to handle window close
         window.makeKeyAndOrderFront(nil)
-        NSApp.activate(ignoringOtherApps: true)
+        window.orderFrontRegardless()
         
         // Store reference
         claudeWindow = window
+        
+        print("🪟 Window created and shown: \(window)")
     }
     
     @objc func openUpdates() {
         UpdateChecker.shared.openReleasesPage()
+    }
+    
+    @objc func openAbout() {
+        if let url = URL(string: "https://github.com/tomigorn/MacOS-Dock-ClaudeAI") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    @objc func openReleases() {
+        if let url = URL(string: "https://github.com/tomigorn/MacOS-Dock-ClaudeAI/releases") {
+            NSWorkspace.shared.open(url)
+        }
+    }
+    
+    // MARK: - NSWindowDelegate
+    
+    func windowWillClose(_ notification: Notification) {
+        print("🪟 Window is closing - resetting loginWindowIsOpen flag")
+        UsageScraper.shared.loginWindowIsOpen = false
+        claudeWindow = nil
     }
 }
 

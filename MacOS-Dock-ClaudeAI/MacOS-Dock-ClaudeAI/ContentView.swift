@@ -128,6 +128,8 @@ class UsageScraper: NSObject, WKNavigationDelegate {
     private var isScraping = false
     private var hasSucceeded = false
     weak var loginWebView: WKWebView?
+    weak var appDelegate: AppDelegate?  // Store reference to AppDelegate
+    var loginWindowIsOpen = false  // Track if login window is already shown (internal access)
 
     override init() {
         super.init()
@@ -138,6 +140,17 @@ class UsageScraper: NSObject, WKNavigationDelegate {
     }
 
     private var retryTimer: Timer?
+    
+    // Quick check on app launch to see if we need to show login window
+    func quickLoginCheck() {
+        guard !isScraping else {
+            print("⏸️ Already scraping, skipping quick check")
+            return
+        }
+        print("🔍 Quick login check...")
+        isScraping = true
+        hiddenWebView.load(URLRequest(url: URL(string: "https://claude.ai/settings/usage")!))
+    }
 
     func startPeriodicFetch() {
         fetchUsage()
@@ -158,7 +171,17 @@ class UsageScraper: NSObject, WKNavigationDelegate {
     }
 
     func fetchUsage() {
-        guard !isScraping else { return }
+        // Don't fetch while login window is open
+        guard !loginWindowIsOpen else {
+            print("⏸️ Login window is open, pausing background scraping")
+            isScraping = false
+            return
+        }
+        
+        guard !isScraping else { 
+            print("⏸️ Already scraping, skipping duplicate request")
+            return 
+        }
         isScraping = true
         print("🔄 Fetching usage data...")
         
@@ -176,20 +199,43 @@ class UsageScraper: NSObject, WKNavigationDelegate {
             isScraping = false
             return 
         }
-        // If redirected to login, we're not authenticated yet
-        if url.path.contains("login") {
+        
+        // Check if redirected to login or logout (not authenticated)
+        let urlString = url.absoluteString
+        if url.path.contains("login") || url.path.contains("logout") || urlString.contains("returnTo") {
             print("⚠️ Not logged in — opening window for user to log in")
             isScraping = false
+            
+            // Only open the window once
+            guard !loginWindowIsOpen else {
+                print("🔒 Login window already open, skipping duplicate open request")
+                return
+            }
+            
+            loginWindowIsOpen = true
+            
             // Show the login window
-            DispatchQueue.main.async {
-                if let appDelegate = NSApp.delegate as? AppDelegate {
-                    appDelegate.openClaudeWindow()
+            DispatchQueue.main.async { [weak self] in
+                print("🔍 Attempting to get AppDelegate...")
+                guard let appDelegate = self?.appDelegate else {
+                    print("❌ AppDelegate reference is nil! Trying NSApp.delegate...")
+                    if let nsAppDelegate = NSApp.delegate as? AppDelegate {
+                        print("✅ Got AppDelegate from NSApp, calling openClaudeWindow()")
+                        nsAppDelegate.openClaudeWindow()
+                    } else {
+                        print("❌ NSApp.delegate cast failed too!")
+                        self?.loginWindowIsOpen = false  // Reset flag if failed
+                    }
+                    return
                 }
+                print("✅ Got AppDelegate from stored reference, calling openClaudeWindow()")
+                appDelegate.openClaudeWindow()
             }
             return
         }
-        guard url.absoluteString.contains("settings/usage") else { 
-            print("⚠️ Unexpected URL: \(url.absoluteString)")
+        
+        guard urlString.contains("settings/usage") else { 
+            print("⚠️ Unexpected URL: \(urlString)")
             isScraping = false
             return 
         }
@@ -228,13 +274,11 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 
                 updateDockIcon(session: session, weekly: weekly)
 
-                // Close the login window after first successful fetch
+                // Mark as succeeded so we switch to 15-minute refresh
                 if let self = self, !self.hasSucceeded {
                     self.hasSucceeded = true
-                    if let appDelegate = NSApp.delegate as? AppDelegate {
-                        appDelegate.claudeWindow?.close()
-                        appDelegate.claudeWindow = nil
-                    }
+                    self.loginWindowIsOpen = false  // Reset flag so window can open again if needed
+                    print("🎉 First successful data fetch!")
                 }
             }
         }
@@ -245,6 +289,7 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 
 class WebViewCoordinator: NSObject, WKNavigationDelegate {
     var registered = false
+    private var checkTimer: Timer?
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
         guard let url = webView.url, url.host?.contains("claude.ai") == true else { return }
@@ -253,7 +298,57 @@ class WebViewCoordinator: NSObject, WKNavigationDelegate {
             registered = true
             // Tell the scraper which window to close after first successful fetch
             UsageScraper.shared.loginWebView = webView
+            
+            // Start polling for URL changes every 2 seconds
+            checkTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self, weak webView] _ in
+                self?.checkIfLoggedIn(webView: webView)
+            }
         }
+        
+        checkIfLoggedIn(webView: webView)
+    }
+    
+    private func checkIfLoggedIn(webView: WKWebView?) {
+        guard let webView = webView, let url = webView.url else { return }
+        
+        let urlString = url.absoluteString
+        print("🌐 WebView current URL: \(urlString)")
+        
+        // STRICT check - ONLY close on /new or /chat URLs (actual logged-in pages)
+        // Do NOT close on logout, login, or redirect URLs
+        let isNewPage = urlString.contains("/new") && !urlString.contains("/login") && !urlString.contains("/logout")
+        let isChatPage = urlString.contains("/chat") && !urlString.contains("/login") && !urlString.contains("/logout")
+        
+        if isNewPage || isChatPage {
+            // User is logged in! Close the window and reset the flag
+            print("✅ Login successful! User reached: \(urlString)")
+            print("🪟 Closing login window...")
+            
+            // Stop the timer
+            checkTimer?.invalidate()
+            checkTimer = nil
+            
+            UsageScraper.shared.loginWindowIsOpen = false
+            
+            // Use the stored appDelegate reference instead of NSApp.delegate
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                if let appDelegate = UsageScraper.shared.appDelegate {
+                    if let window = appDelegate.claudeWindow {
+                        print("🪟 Actually closing window: \(window)")
+                        window.close()
+                        appDelegate.claudeWindow = nil
+                    } else {
+                        print("⚠️ Window reference was nil, couldn't close")
+                    }
+                } else {
+                    print("⚠️ Couldn't get AppDelegate from UsageScraper")
+                }
+            }
+        }
+    }
+    
+    deinit {
+        checkTimer?.invalidate()
     }
 }
 
