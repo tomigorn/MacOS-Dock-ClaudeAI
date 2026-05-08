@@ -436,10 +436,22 @@ struct ContentView: View {
 
 class UpdateChecker {
     static let shared = UpdateChecker()
-    private var latestVersionString: String?
-    private var updateAvailable = false
+    private var latestVersionString: String? {
+        didSet {
+            UserDefaults.standard.set(latestVersionString, forKey: "latestVersionString")
+        }
+    }
+    private var updateAvailable = false {
+        didSet {
+            UserDefaults.standard.set(updateAvailable, forKey: "updateAvailable")
+        }
+    }
     
-    private init() {}
+    private init() {
+        // Restore state from UserDefaults
+        latestVersionString = UserDefaults.standard.string(forKey: "latestVersionString")
+        updateAvailable = UserDefaults.standard.bool(forKey: "updateAvailable")
+    }
     
     func startChecking() {
         // Request notification permission
@@ -449,8 +461,11 @@ class UpdateChecker {
             }
         }
         
+        // Check for updates immediately on launch
         checkForUpdates()
-        Timer.scheduledTimer(withTimeInterval: 6 * 60 * 60, repeats: true) { [weak self] _ in
+        
+        // Then check every hour (3600 seconds)
+        Timer.scheduledTimer(withTimeInterval: 60 * 60, repeats: true) { [weak self] _ in
             self?.checkForUpdates()
         }
     }
@@ -470,15 +485,30 @@ class UpdateChecker {
             
             DispatchQueue.main.async {
                 let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+                let wasUpdateAvailable = self.updateAvailable
+                
                 if self.isNewer(remote: tagName, local: currentVersion) {
                     self.latestVersionString = tagName
                     self.updateAvailable = true
-                    print("✅ Update available: \(tagName)")
+                    print("✅ Update available: \(tagName) (current: \(currentVersion))")
                     
-                    // Send notification
-                    self.sendUpdateNotification(version: tagName)
+                    // Only send notification if this is a newly detected update
+                    if !wasUpdateAvailable {
+                        self.sendUpdateNotification(version: tagName)
+                    }
                     
                     // Redraw the dock icon with the badge
+                    let store = SessionStore.shared
+                    updateDockIcon(session: store.sessionUsage, weekly: store.weeklyUsage)
+                } else {
+                    // No update available - clear the flags
+                    if wasUpdateAvailable {
+                        print("✅ App is now up to date (current: \(currentVersion), latest: \(tagName))")
+                    }
+                    self.latestVersionString = nil
+                    self.updateAvailable = false
+                    
+                    // Redraw the dock icon without the badge
                     let store = SessionStore.shared
                     updateDockIcon(session: store.sessionUsage, weekly: store.weeklyUsage)
                 }
