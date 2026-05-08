@@ -13,8 +13,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
         // Set a dark placeholder icon as early as possible
         updateDockIcon()
-        // Start scraping immediately — don't wait for the visible window
-        UsageScraper.shared.startPeriodicFetch()
+    }
+    
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // Give WebKit more time to fully initialize and load cookies from disk
+        // Especially important after a cold boot (shutdown vs restart)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 10.0) {
+            UsageScraper.shared.startPeriodicFetch()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

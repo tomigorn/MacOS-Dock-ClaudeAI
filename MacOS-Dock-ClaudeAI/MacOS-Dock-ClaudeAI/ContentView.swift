@@ -127,18 +127,32 @@ class UsageScraper: NSObject, WKNavigationDelegate {
         guard !isScraping else { return }
         isScraping = true
         print("🔄 Fetching usage data...")
+        
+        // Check if we have cookies before attempting to load
+        WKWebsiteDataStore.default().httpCookieStore.getAllCookies { cookies in
+            let claudeCookies = cookies.filter { $0.domain.contains("claude.ai") }
+            print("🍪 Found \(claudeCookies.count) claude.ai cookies")
+        }
+        
         hiddenWebView.load(URLRequest(url: URL(string: "https://claude.ai/settings/usage")!))
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-        guard let url = webView.url else { return }
+        guard let url = webView.url else { 
+            isScraping = false
+            return 
+        }
         // If redirected to login, we're not authenticated yet
         if url.path.contains("login") {
             print("⚠️ Not logged in yet — waiting for user to log in via window")
             isScraping = false
             return
         }
-        guard url.absoluteString.contains("settings/usage") else { return }
+        guard url.absoluteString.contains("settings/usage") else { 
+            print("⚠️ Unexpected URL: \(url.absoluteString)")
+            isScraping = false
+            return 
+        }
 
         // Wait for the SPA to render
         DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak self] in
