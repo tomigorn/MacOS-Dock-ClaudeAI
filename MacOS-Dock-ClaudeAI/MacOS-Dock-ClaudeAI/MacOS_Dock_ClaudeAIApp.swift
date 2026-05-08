@@ -14,8 +14,6 @@ class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     
     override init() {
         super.init()
-        // Set a dark placeholder icon as early as possible
-        updateDockIcon()
     }
     
     func applicationDidFinishLaunching(_ notification: Notification) {
