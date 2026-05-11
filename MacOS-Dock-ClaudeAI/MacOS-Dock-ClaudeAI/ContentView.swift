@@ -188,8 +188,8 @@ class UsageScraper: NSObject, WKNavigationDelegate {
             if self.hasSucceeded {
                 timer.invalidate()
                 self.retryTimer = nil
-                // Switch to 15-minute refresh
-                self.refreshTimer = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { [weak self] _ in
+                // Switch to 8-minute refresh (480 seconds)
+                self.refreshTimer = Timer.scheduledTimer(withTimeInterval: 480, repeats: true) { [weak self] _ in
                     self?.fetchUsage()
                 }
             } else {
