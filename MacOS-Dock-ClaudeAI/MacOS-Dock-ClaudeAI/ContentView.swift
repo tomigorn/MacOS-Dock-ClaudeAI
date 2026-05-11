@@ -39,6 +39,12 @@ let usageJS = """
 
 // MARK: - Session Store
 
+enum AppState {
+    case loading        // Initial state, waiting for first check
+    case success        // Successfully fetched data
+    case error          // Failed to fetch (offline, auth issue, etc.)
+}
+
 class SessionStore {
     static let shared = SessionStore()
     var cookies: [HTTPCookie] = []
@@ -46,6 +52,7 @@ class SessionStore {
     var weeklyUsage: Int?
     var sessionResetText: String?
     var weeklyResetText: String?
+    var appState: AppState = .loading  // Track current app state
 }
 
 // MARK: - Dock Icon Renderer
@@ -53,6 +60,7 @@ class SessionStore {
 func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
     let size = NSSize(width: 128, height: 128)
     let hasUpdate = UpdateChecker.shared.hasUpdate()
+    let state = SessionStore.shared.appState
     
     let image = NSImage(size: size, flipped: false) { rect in
         let bgPath = NSBezierPath(roundedRect: rect.insetBy(dx: 4, dy: 4), xRadius: 24, yRadius: 24)
@@ -72,12 +80,29 @@ func updateDockIcon(session: Int? = nil, weekly: Int? = nil) {
             .font: smallFont, .foregroundColor: textColor, .paragraphStyle: paragraphStyle
         ]
 
-        let line1 = session.map { "\($0)%" } ?? "—"
+        // Determine what to display based on app state
+        let line1: String
+        let line2: String
+        
+        switch state {
+        case .loading:
+            // Show loading state with percentage signs
+            line1 = "...%"
+            line2 = "...%"
+        case .success:
+            // Show actual values with percentage signs
+            line1 = session.map { "\($0)%" } ?? "...%"
+            line2 = weekly.map { "\($0)%" } ?? "...%"
+        case .error:
+            // Show "log" and "in" on two lines
+            line1 = "log"
+            line2 = "in"
+        }
+        
         let line1Size = (line1 as NSString).size(withAttributes: bigAttrs)
         let line1Rect = NSRect(x: 0, y: rect.midY + 2, width: rect.width, height: line1Size.height)
         (line1 as NSString).draw(in: line1Rect, withAttributes: bigAttrs)
 
-        let line2 = weekly.map { "\($0)%" } ?? "—"
         let line2Size = (line2 as NSString).size(withAttributes: smallAttrs)
         let line2Rect = NSRect(x: 0, y: rect.midY - line2Size.height + 2, width: rect.width, height: line2Size.height)
         (line2 as NSString).draw(in: line2Rect, withAttributes: smallAttrs)
@@ -244,6 +269,14 @@ class UsageScraper: NSObject, WKNavigationDelegate {
             print("⚠️ Not logged in — opening window for user to log in")
             isScraping = false
             
+            // Update dock icon to show "log in"
+            SessionStore.shared.sessionUsage = nil
+            SessionStore.shared.weeklyUsage = nil
+            SessionStore.shared.sessionResetText = nil
+            SessionStore.shared.weeklyResetText = nil
+            SessionStore.shared.appState = .error
+            updateDockIcon(session: nil, weekly: nil)
+            
             // Only open the window once
             guard !loginWindowIsOpen else {
                 print("🔒 Login window already open, skipping duplicate open request")
@@ -287,12 +320,12 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 
                 if let error = error {
                     print("❌ JS error: \(error)")
-                    // Clear cached values and show dashes
+                    // Clear cached values and show "log in"
                     SessionStore.shared.sessionUsage = nil
                     SessionStore.shared.weeklyUsage = nil
                     SessionStore.shared.sessionResetText = nil
                     SessionStore.shared.weeklyResetText = nil
-                    SessionStore.shared.isLoading = false  // No longer loading
+                    SessionStore.shared.appState = .error
                     updateDockIcon(session: nil, weekly: nil)
                     return
                 }
@@ -300,12 +333,12 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                       let data = jsonString.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     print("❌ Failed to parse usage JSON")
-                    // Clear cached values and show dashes
+                    // Clear cached values and show "log in"
                     SessionStore.shared.sessionUsage = nil
                     SessionStore.shared.weeklyUsage = nil
                     SessionStore.shared.sessionResetText = nil
                     SessionStore.shared.weeklyResetText = nil
-                    SessionStore.shared.isLoading = false  // No longer loading
+                    SessionStore.shared.appState = .error
                     updateDockIcon(session: nil, weekly: nil)
                     return
                 }
@@ -313,12 +346,12 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                 guard let session = json["session"] as? Int,
                       let weekly = json["weekly"] as? Int else {
                     print("⚠️ Usage values not found in DOM — page may not have rendered yet")
-                    // Clear cached values and show dashes
+                    // Clear cached values and show "log in"
                     SessionStore.shared.sessionUsage = nil
                     SessionStore.shared.weeklyUsage = nil
                     SessionStore.shared.sessionResetText = nil
                     SessionStore.shared.weeklyResetText = nil
-                    SessionStore.shared.isLoading = false  // No longer loading
+                    SessionStore.shared.appState = .error
                     updateDockIcon(session: nil, weekly: nil)
                     return
                 }
@@ -327,6 +360,7 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                 SessionStore.shared.weeklyUsage = weekly
                 SessionStore.shared.sessionResetText = json["sessionReset"] as? String
                 SessionStore.shared.weeklyResetText = json["weeklyReset"] as? String
+                SessionStore.shared.appState = .success
 
                 print("=== Usage Data ===")
                 print("Current session: \(session)%")
@@ -335,7 +369,7 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 
                 updateDockIcon(session: session, weekly: weekly)
 
-                // Mark as succeeded so we switch to 15-minute refresh
+                // Mark as succeeded so we switch to 8-minute refresh
                 if let self = self, !self.hasSucceeded {
                     self.hasSucceeded = true
                     self.loginWindowIsOpen = false  // Reset flag so window can open again if needed
@@ -344,6 +378,20 @@ class UsageScraper: NSObject, WKNavigationDelegate {
                 }
             }
         }
+    }
+    
+    // Handle navigation failures (network errors, etc.)
+    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+        print("❌ Navigation failed: \(error.localizedDescription)")
+        isScraping = false
+        
+        // Clear cached values and show "log in"
+        SessionStore.shared.sessionUsage = nil
+        SessionStore.shared.weeklyUsage = nil
+        SessionStore.shared.sessionResetText = nil
+        SessionStore.shared.weeklyResetText = nil
+        SessionStore.shared.appState = .error
+        updateDockIcon(session: nil, weekly: nil)
     }
 }
 
