@@ -287,18 +287,39 @@ class UsageScraper: NSObject, WKNavigationDelegate {
 
                 if let error = error {
                     print("❌ JS error: \(error)")
+                    // Clear cached values and show dashes
+                    SessionStore.shared.sessionUsage = nil
+                    SessionStore.shared.weeklyUsage = nil
+                    SessionStore.shared.sessionResetText = nil
+                    SessionStore.shared.weeklyResetText = nil
+                    SessionStore.shared.isLoading = false  // No longer loading
+                    updateDockIcon(session: nil, weekly: nil)
                     return
                 }
                 guard let jsonString = result as? String,
                       let data = jsonString.data(using: .utf8),
                       let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
                     print("❌ Failed to parse usage JSON")
+                    // Clear cached values and show dashes
+                    SessionStore.shared.sessionUsage = nil
+                    SessionStore.shared.weeklyUsage = nil
+                    SessionStore.shared.sessionResetText = nil
+                    SessionStore.shared.weeklyResetText = nil
+                    SessionStore.shared.isLoading = false  // No longer loading
+                    updateDockIcon(session: nil, weekly: nil)
                     return
                 }
 
                 guard let session = json["session"] as? Int,
                       let weekly = json["weekly"] as? Int else {
                     print("⚠️ Usage values not found in DOM — page may not have rendered yet")
+                    // Clear cached values and show dashes
+                    SessionStore.shared.sessionUsage = nil
+                    SessionStore.shared.weeklyUsage = nil
+                    SessionStore.shared.sessionResetText = nil
+                    SessionStore.shared.weeklyResetText = nil
+                    SessionStore.shared.isLoading = false  // No longer loading
+                    updateDockIcon(session: nil, weekly: nil)
                     return
                 }
 
