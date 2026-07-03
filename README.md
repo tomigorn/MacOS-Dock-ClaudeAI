@@ -1,5 +1,7 @@
 # Claude Usage — macOS Dock Monitor
 
+> ⚠️ **DEPRECATED** — This project is no longer functional. Anthropic/Claude has blocked the web scraping approach this tool relied on, making it impossible to fetch usage data. The repository is archived and will not receive further updates.
+
 A native macOS app that shows your Claude.ai usage percentages directly on the Dock icon.
 
 <img width="302" height="76" alt="SCR-20260507-ptln" src="https://github.com/user-attachments/assets/51a6d8d9-8874-48b7-a7e9-48fe752edb82" />
